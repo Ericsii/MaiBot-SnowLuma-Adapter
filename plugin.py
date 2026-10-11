@@ -125,7 +125,6 @@ class SnowLumaAdapterPlugin(
         "open_private_chat",
         description=(
             "向指定 QQ 用户发送一条私聊消息，用于主动开启私聊。"
-            "请在宿主适配器策略中放行该私聊。"
         ),
         parameters=[
             ToolParameterInfo(
@@ -290,7 +289,6 @@ class SnowLumaAdapterPlugin(
         "send_poke",
         description=(
             "对指定消息的发送者发送戳一戳。"
-            "群聊消息在该消息所在的群内戳；私聊消息则发送好友戳一戳。"
         ),
         parameters=[
             ToolParameterInfo(
@@ -540,8 +538,7 @@ class SnowLumaAdapterPlugin(
         "react_emoji",
         description=(
             "给一条消息贴表情表态（消息回应），如点赞、爱心等。"
-            "常用表情 ID：76=赞、66=爱心、63=玫瑰、21=可爱、28=憨笑、"
-            "5=流泪、9=大哭、6=害羞、78=握手、144=喝彩。"
+            "常用表情 ID：76=赞、66=爱心、63=玫瑰、21=可爱、5=流泪、78=握手（戏谑的志同道合）、144=喝彩。424=续标识(表达刺激或极度同意）"
         ),
         parameters=[
             ToolParameterInfo(
@@ -670,14 +667,32 @@ class SnowLumaAdapterPlugin(
             "把一批消息打包成合并转发消息，发送到指定的群或私聊。"
             "目标群号或用户 QQ 号可先用 list_chat_streams 查询。"
             "消息 ID 来自聊天记录，将按传入顺序组成转发记录。"
+            "也可用 attach_pic 选择上下文或工具返回的图片，图片追加到消息记录之后，发送者为机器人自己。"
         ),
         parameters=[
             ToolParameterInfo(
                 name="message_ids",
                 param_type=ToolParamType.ARRAY,
                 description="要转发的消息 ID 列表，按顺序排列。",
-                required=True,
+                required=False,
                 items_schema={"type": "string", "description": "聊天记录中的消息 ID"},
+            ),
+            ToolParameterInfo(
+                name="attach_pic",
+                param_type=ToolParamType.ARRAY,
+                description="要打包的上下文图片，按顺序追加为机器人发送的节点；与 message_ids 至少提供一项。",
+                required=False,
+                items_schema={
+                    "type": "object",
+                    "properties": {
+                        "msg_id": {"type": "string", "description": "图片所在的 IM 消息 ID；与 media_index 二选一。"},
+                        "media_index": {
+                            "type": "string",
+                            "description": "上下文媒体索引，如 tool_result:call_x:1；与 msg_id 二选一。",
+                        },
+                        "index": {"type": "integer", "minimum": 0, "default": 0, "description": "图片序号，从 0 开始。"},
+                    },
+                },
             ),
             ToolParameterInfo(
                 name="target_group_id",
@@ -701,21 +716,41 @@ class SnowLumaAdapterPlugin(
         target_group_id: Any = "",
         target_user_id: Any = "",
         stream_id: str = "",
+        attach_pic: Any = None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """把一批消息打包成合并转发发送到目标聊天。"""
         del kwargs
 
-        if not isinstance(message_ids, list) or not message_ids:
-            return {"success": False, "error": "message_ids 必须是非空消息 ID 数组"}
+        if message_ids is None:
+            message_ids = []
+        if attach_pic is None:
+            attach_pic = []
+        if not isinstance(message_ids, list) or not isinstance(attach_pic, list):
+            return {"success": False, "error": "message_ids 和 attach_pic 必须是数组"}
 
         # 保序去重，避免同一消息被重复查询与重复出现在转发记录中。
         normalized_message_ids = list(dict.fromkeys(str(item or "").strip() for item in message_ids))
         normalized_message_ids = [item for item in normalized_message_ids if item]
-        if not normalized_message_ids:
-            return {"success": False, "error": "message_ids 中没有有效的消息 ID"}
-        if len(normalized_message_ids) > 50:
-            return {"success": False, "error": "单次转发最多支持 50 条消息"}
+        if not normalized_message_ids and not attach_pic:
+            return {"success": False, "error": "message_ids 或 attach_pic 至少提供一项"}
+        if len(normalized_message_ids) + len(attach_pic) > 50:
+            return {"success": False, "error": "单次转发最多支持 50 个消息或图片节点"}
+        if attach_pic and not stream_id:
+            return {"success": False, "error": "选择上下文图片需要当前聊天流 stream_id"}
+
+        selected_images: List[Dict[str, Any]] = []
+        for attachment in attach_pic:
+            if not isinstance(attachment, dict):
+                return {"success": False, "error": "attach_pic 每项必须是图片引用对象"}
+            msg_id = str(attachment.get("msg_id") or "").strip()
+            media_index = str(attachment.get("media_index") or "").strip()
+            index = attachment.get("index", 0)
+            if bool(msg_id) == bool(media_index):
+                return {"success": False, "error": "图片引用的 msg_id 与 media_index 必须二选一"}
+            if isinstance(index, bool) or not isinstance(index, int) or index < 0:
+                return {"success": False, "error": "图片 index 必须是非负整数"}
+            selected_images.append({"source_id": msg_id or media_index, "index": index})
 
         normalized_target_group_id = str(target_group_id or "").strip()
         normalized_target_user_id = str(target_user_id or "").strip()
@@ -746,8 +781,34 @@ class SnowLumaAdapterPlugin(
                 }
             )
 
-        # 组装 forward 段并复用出站编解码链路：参数键按画像取值，消息段统一编码。
         runtime_bundle = self._require_runtime_bundle()
+        # 上下文图片由 Host 在当前聊天流中解析，转发节点使用实际登录的机器人身份。
+        if selected_images:
+            bot_id = runtime_bundle.runtime_state.account_id
+            login_info = await runtime_bundle.query_service.get_login_info()
+            if not bot_id or not isinstance(login_info, dict) or str(login_info.get("user_id")) != bot_id:
+                return {"success": False, "error": "无法确认当前连接的机器人身份"}
+            bot_name = str(login_info.get("nickname") or "").strip()
+            if not bot_name:
+                return {"success": False, "error": "当前登录机器人缺少昵称"}
+            for selection in selected_images:
+                image_message = await self.ctx.message.get_by_id(
+                    selection["source_id"],
+                    stream_id=stream_id,
+                    include_binary_data=True,
+                    context_image_index=selection["index"],
+                )
+                image_segments = image_message.get("raw_message") if isinstance(image_message, Mapping) else None
+                if (
+                    not isinstance(image_segments, list)
+                    or len(image_segments) != 1
+                    or image_segments[0].get("type") != "image"
+                    or not image_segments[0].get("binary_data_base64")
+                ):
+                    return {"success": False, "error": f"无法读取上下文图片: {selection['source_id']} index={selection['index']}"}
+                forward_nodes.append({"user_id": bot_id, "user_nickname": bot_name, "content": image_segments})
+
+        # 组装 forward 段并复用出站编解码链路：参数键按画像取值，消息段统一编码。
         outbound_message: Dict[str, Any] = {
             "message_info": {"group_info": {}, "user_info": {}, "additional_config": {}},
             "raw_message": [{"type": "forward", "data": forward_nodes}],
