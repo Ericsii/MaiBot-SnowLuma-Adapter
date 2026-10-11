@@ -16,21 +16,24 @@ except ImportError:
     AIOHTTP_AVAILABLE = False
 
 if TYPE_CHECKING:
+    from ..profile import ProfileState
     from ..transport import QQTransportClient
 
 
 class QQActionService:
     """QQ 底层动作与资源访问服务。"""
 
-    def __init__(self, logger: Any, transport: "QQTransportClient") -> None:
+    def __init__(self, logger: Any, transport: "QQTransportClient", profile_state: "ProfileState") -> None:
         """初始化底层动作服务。
 
         Args:
             logger: 插件日志对象。
             transport: 传输层客户端。
+            profile_state: 当前连接的客户端画像。
         """
         self._logger = logger
         self._transport = transport
+        self._profile_state = profile_state
 
     async def call_action(self, action_name: str, params: Mapping[str, Any]) -> Dict[str, Any]:
         """调用 OneBot 动作并要求返回成功结果。
@@ -53,10 +56,60 @@ class QQActionService:
         except Exception as exc:
             raise RuntimeError(f"对端动作执行失败: action={action_name} error={exc}") from exc
 
-        if str(response.get("status") or "").lower() != "ok":
+        if str(response.get("status") or "").lower() != "ok" or response.get("retcode", 0) != 0:
             error_message = str(response.get("wording") or response.get("message") or "unknown")
             raise RuntimeError(f"对端动作返回失败: action={action_name} message={error_message}")
+        await self._confirm_group_delivery(action_name, normalized_params, response)
         return response
+
+    async def _confirm_group_delivery(
+        self, action_name: str, params: Mapping[str, Any], response: Mapping[str, Any]
+    ) -> None:
+        """SnowLuma 群消息必须取得真实群序号，不能将本地合成记录算作发送成功。"""
+
+        if self._profile_state.profile.client_type != "snowluma":
+            return
+        is_group_send = action_name in {"send_group_msg", "send_group_forward_msg"} or (
+            action_name in {"send_msg", "send_forward_msg"} and bool(params.get("group_id"))
+        )
+        if not is_group_send:
+            return
+
+        data = response.get("data")
+        message_id = data.get("message_id") if isinstance(data, Mapping) else None
+        if (
+            isinstance(message_id, bool)
+            or not isinstance(message_id, (int, str))
+            or not str(message_id).removeprefix("-").isdigit()
+            or int(message_id) == 0
+        ):
+            raise RuntimeError(f"群消息投递未确认: action={action_name} 对端未返回有效消息 ID")
+
+        # get_msg 也会返回本地缓存，因此查询成功本身不是确认；必须检查真实序号及目标群。
+        try:
+            detail_response = await self._transport.call_action("get_msg", {"message_id": message_id})
+        except Exception as exc:
+            raise RuntimeError(
+                f"群消息投递未确认: action={action_name} message_id={message_id} "
+                f"查询回执失败: {type(exc).__name__}: {exc}；消息仍可能迟到，不应自动重发"
+            ) from exc
+        detail = detail_response.get("data")
+        sequence = detail.get("message_seq") if isinstance(detail, Mapping) else None
+        if (
+            str(detail_response.get("status") or "").lower() != "ok"
+            or detail_response.get("retcode", 0) != 0
+            or not isinstance(detail, Mapping)
+            or detail.get("message_type") != "group"
+            or str(detail.get("group_id")) != str(params.get("group_id"))
+            or str(detail.get("message_id")) != str(message_id)
+            or isinstance(sequence, bool)
+            or not isinstance(sequence, int)
+            or sequence <= 0
+        ):
+            raise RuntimeError(
+                f"群消息投递未确认: action={action_name} message_id={message_id} "
+                "未取得对应群消息的真实序号；消息仍可能迟到，不应自动重发"
+            )
 
     async def call_action_data(self, action_name: str, params: Mapping[str, Any]) -> Any:
         """调用 OneBot 动作并返回 ``data`` 字段。

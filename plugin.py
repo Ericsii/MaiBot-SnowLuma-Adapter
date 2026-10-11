@@ -821,7 +821,7 @@ class SnowLumaAdapterPlugin(
             if debug_logger is not None:
                 debug_logger.log_raw_outbound(internal_message_id, action_name, params)
             try:
-                response = await runtime_bundle.transport.call_action(action_name, params)
+                response = await runtime_bundle.action_service.call_action(action_name, params)
             except Exception as exc:
                 return {"success": False, "error": str(exc), "metadata": {"action": action_name}}
             if not self._is_action_response_ok(response):
@@ -869,8 +869,7 @@ class SnowLumaAdapterPlugin(
     def _is_action_response_ok(response: Mapping[str, Any]) -> bool:
         """判定动作响应是否成功。
 
-        兼容两类口径：标准 ``status == "ok"``，以及 SnowLuma 异步执行时
-        ``retcode in {0, 1}`` 的响应。
+        仅受理的异步动作不算发送成功，必须是完成状态且无错误码。
 
         Args:
             response: 对端返回的原始响应字典。
@@ -879,10 +878,7 @@ class SnowLumaAdapterPlugin(
             bool: 若响应表示成功则返回 ``True``。
         """
         status = str(response.get("status") or "").strip().lower()
-        if status == "ok":
-            return True
-        retcode = response.get("retcode")
-        return isinstance(retcode, int) and retcode in {0, 1}
+        return status == "ok" and response.get("retcode", 0) == 0
 
     def _ensure_runtime_components(self) -> None:
         """确保运行时依赖对象已经完成初始化。"""

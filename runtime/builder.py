@@ -70,7 +70,7 @@ class QQRuntimeBuilder:
             on_connection_closed=on_connection_closed,
             on_payload=on_payload,
         )
-        action_service = QQActionService(self._logger, transport)
+        action_service = QQActionService(self._logger, transport, profile_state)
         query_service = QQQueryService(action_service, self._logger)
         ban_state_store = QQBanStateStore(self._logger)
         inbound_codec = QQInboundCodec(self._logger, query_service, profile_state, load_settings)
