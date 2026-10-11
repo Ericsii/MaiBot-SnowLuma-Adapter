@@ -2,16 +2,32 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Mapping
+from typing import Any, Callable, Dict, List, Mapping, Optional
+
+import re
+
+from ...qq_face_map import QQ_FACE_DESCRIPTIONS
 
 SYNTHETIC_MESSAGE_ID_PREFIX = "qq-"
+
+# 同名表情优先使用映射表中的首个 ID，避免 Unicode 别名覆盖 QQ 原生表情。
+QQ_FACE_IDS_BY_NAME: Dict[str, str] = {}
+for _face_id, _face_name in QQ_FACE_DESCRIPTIONS.items():
+    if _face_id.isdecimal():
+        QQ_FACE_IDS_BY_NAME.setdefault(_face_name, _face_id)
+QQ_TEXT_FACE_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9_/:])/("
+    + "|".join(re.escape(name) for name in sorted(QQ_FACE_IDS_BY_NAME, key=len, reverse=True))
+    + r")(?!\w)"
+)
 
 
 class QQOutboundSegmentEncoder:
     """将 Host 消息段转换为 OneBot 消息段。"""
 
-    def __init__(self) -> None:
+    def __init__(self, enable_text_face_conversion: Optional[Callable[[], bool]] = None) -> None:
         """初始化出站消息段编码器。"""
+        self._enable_text_face_conversion = enable_text_face_conversion
         self._segment_builders: Dict[str, Callable[[Mapping[str, Any]], List[Dict[str, Any]]]] = {
             "at": self._build_at_segments,
             "dict": self._build_dict_segments,
@@ -105,7 +121,20 @@ class QQOutboundSegmentEncoder:
             List[Dict[str, Any]]: 构造后的 OneBot 文本消息段列表。
         """
         text_value = str(item.get("data") or "")
-        return [{"type": "text", "data": {"text": text_value}}]
+        if self._enable_text_face_conversion is None or not self._enable_text_face_conversion():
+            return [{"type": "text", "data": {"text": text_value}}]
+
+        # 仅拆分完整匹配的 /表情名，保留空格、标点及未知名称的原始文本。
+        segments: List[Dict[str, Any]] = []
+        cursor = 0
+        for match in QQ_TEXT_FACE_PATTERN.finditer(text_value):
+            if match.start() > cursor:
+                segments.append({"type": "text", "data": {"text": text_value[cursor:match.start()]}})
+            segments.append({"type": "face", "data": {"id": QQ_FACE_IDS_BY_NAME[match.group(1)]}})
+            cursor = match.end()
+        if cursor < len(text_value) or not segments:
+            segments.append({"type": "text", "data": {"text": text_value[cursor:]}})
+        return segments
 
     def _build_at_segments(self, item: Mapping[str, Any]) -> List[Dict[str, Any]]:
         """构造 @ 消息段。

@@ -812,7 +812,7 @@ class SnowLumaAdapterPlugin(
         internal_message_id = str(message.get("message_id") or "").strip()
 
         try:
-            actions = runtime_bundle.outbound_codec.build_outbound_actions(message, route or {})
+            actions = await runtime_bundle.outbound_codec.prepare_outbound_actions(message, route or {})
         except Exception as exc:
             return {"success": False, "error": str(exc)}
 

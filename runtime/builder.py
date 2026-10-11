@@ -91,7 +91,12 @@ class QQRuntimeBuilder:
             on_timeout=on_heartbeat_timeout,
         )
         official_bot_guard = QQOfficialBotGuard(self._logger, query_service)
-        outbound_codec = QQOutboundCodec(profile_state)
+        outbound_codec = QQOutboundCodec(
+            profile_state,
+            enable_text_face_conversion=lambda: load_settings().plugin.enable_text_face_conversion,
+            enable_text_at_conversion=lambda: load_settings().plugin.enable_text_at_conversion,
+            get_group_members=query_service.get_group_member_list,
+        )
 
         return QQRuntimeBundle(
             action_service=action_service,

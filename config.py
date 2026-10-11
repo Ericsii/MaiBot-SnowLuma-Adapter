@@ -252,6 +252,38 @@ class QQPluginOptions(PluginConfigBase):
             "order": 1,
         },
     )
+    enable_text_face_conversion: bool = Field(
+        default=False,
+        description="发送时将 /表情名 格式的文本转换为 QQ 原生表情，未知名称保持原样。",
+        json_schema_extra={
+            "label": "启用文本转QQ表情",
+            "hint": "开启后，/捂脸 /微笑 等已知名称会转换为 QQ 表情；找不到的名称不转换。",
+            "i18n": _schema_i18n(
+                label_en="Convert text to QQ faces",
+                label_ja="テキストを QQ 絵文字に変換",
+                hint_en="Convert known /face-name text to native QQ faces when sending; unknown names stay unchanged.",
+                hint_ja="送信時に既知の /表情名 を QQ 絵文字に変換します。不明な名前はそのまま送信します。",
+            ),
+            "order": 2,
+        },
+    )
+    enable_text_at_conversion: bool = Field(
+        default=False,
+        description="将群聊发送文本中的 @QQ号、@群名片或 @昵称转换为实际 @。",
+        json_schema_extra={
+            "label": "启用文本转@",
+            "hint": "仅转换能唯一匹配当前群成员的完整名称；未知或重名保留原文，重复 @ 和中间空白均保留。",
+            "i18n": _schema_i18n(
+                label_en="Convert text mentions",
+                label_ja="テキストのメンションを変換",
+                hint_en="Resolve full QQ IDs, group cards or nicknames within the current group; "
+                "keep unknown or ambiguous names, repeated mentions and intervening whitespace.",
+                hint_ja="現在のグループ内で QQ 番号・グループ名・ニックネームを完全一致で検索します。"
+                "不明・同名はそのままにし、重複するメンションと間の空白を保持します。",
+            ),
+            "order": 3,
+        },
+    )
     config_version: str = Field(
         default=SUPPORTED_CONFIG_VERSION,
         description="当前配置结构版本。",

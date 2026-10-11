@@ -11,9 +11,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Mapping, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Tuple
 
 from ...profile import MSG_ACTION_STYLE_GENERIC
+from .mentions import build_member_aliases, convert_text_mentions
 from .segment_encoder import QQOutboundSegmentEncoder
 
 OutboundAction = Tuple[str, Dict[str, Any]]
@@ -24,14 +25,50 @@ SYNTHETIC_MESSAGE_ID_PREFIX = "qq-"
 class QQOutboundCodec:
     """出站消息编码器。"""
 
-    def __init__(self, profile_state: Any) -> None:
+    def __init__(
+        self,
+        profile_state: Any,
+        enable_text_face_conversion: Optional[Callable[[], bool]] = None,
+        enable_text_at_conversion: Optional[Callable[[], bool]] = None,
+        get_group_members: Optional[Callable[[str], Awaitable[Optional[List[Dict[str, Any]]]]]] = None,
+    ) -> None:
         """初始化出站消息编码器。
 
         Args:
             profile_state: 当前连接的客户端画像容器。
+            enable_text_face_conversion: 返回当前文本表情转换开关的回调。
+            enable_text_at_conversion: 返回当前文本 @ 转换开关的回调。
+            get_group_members: 异步查询当前群成员列表的回调。
         """
-        self._segment_encoder = QQOutboundSegmentEncoder()
+        self._segment_encoder = QQOutboundSegmentEncoder(enable_text_face_conversion)
         self._profile_state = profile_state
+        self._enable_text_at_conversion = enable_text_at_conversion
+        self._get_group_members = get_group_members
+
+    async def prepare_outbound_actions(
+        self, message: Mapping[str, Any], route: Mapping[str, Any]
+    ) -> List[OutboundAction]:
+        """构建动作并按当前群成员转换文本 @；历史合并转发内容保持原样。"""
+        actions = self.build_outbound_actions(message, route)
+        conversion_enabled = self._enable_text_at_conversion is not None and self._enable_text_at_conversion()
+
+        aliases: Optional[Dict[str, str]] = None
+        for action_name, params in actions:
+            if action_name not in {"send_group_msg", "send_msg"} or not params.get("group_id"):
+                continue
+            segments = params["message"]
+            if conversion_enabled and any(
+                item.get("type") == "text" and "@" in item["data"]["text"] for item in segments
+            ):
+                # 只有包含文本 @ 时才查询，拆分文件产生的多个发送动作共用本次查询结果。
+                if aliases is None:
+                    if self._get_group_members is None:
+                        raise RuntimeError("文本 @ 转换已启用，但未配置群成员查询接口")
+                    members = await self._get_group_members(str(params["group_id"]))
+                    aliases = build_member_aliases(members) if members is not None else {}
+                segments = convert_text_mentions(segments, aliases)
+            params["message"] = segments
+        return actions
 
     def build_outbound_actions(
         self,
