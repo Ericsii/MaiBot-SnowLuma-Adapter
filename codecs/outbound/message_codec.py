@@ -81,7 +81,8 @@ class QQOutboundCodec:
         ).strip()
 
         if self._contains_forward_segment(raw_message):
-            return [self._build_forward_action(raw_message, additional_config, target_group_id, target_user_id)]
+            account_id = str(message.get("account_id") or "").strip()
+            return [self._build_forward_action(raw_message, account_id, target_group_id, target_user_id)]
 
         return self._build_regular_actions(raw_message, target_group_id, target_user_id)
 
@@ -221,7 +222,7 @@ class QQOutboundCodec:
     def _build_forward_action(
         self,
         raw_message: Any,
-        additional_config: Mapping[str, Any],
+        account_id: str,
         target_group_id: str,
         target_user_id: str,
     ) -> OutboundAction:
@@ -231,7 +232,7 @@ class QQOutboundCodec:
 
         Args:
             raw_message: Host 侧 ``raw_message`` 字段。
-            additional_config: 附加配置（取 self_id 构造合成节点）。
+            account_id: 消息正式账号归属，用于构造合成节点。
             target_group_id: 目标群号；群聊出站时非空。
             target_user_id: 目标用户号；私聊出站时非空。
 
@@ -242,7 +243,7 @@ class QQOutboundCodec:
             ValueError: 当私聊出站缺少目标用户 ID 时抛出。
         """
         profile = self._profile_state.profile
-        forward_segments = self._build_forward_message_segments(raw_message, additional_config)
+        forward_segments = self._build_forward_message_segments(raw_message, account_id)
         param_key = profile.forward_param_key
         if target_group_id:
             return "send_group_forward_msg", {"group_id": target_group_id, param_key: forward_segments}
@@ -260,7 +261,7 @@ class QQOutboundCodec:
     def _build_forward_message_segments(
         self,
         raw_message: Any,
-        additional_config: Mapping[str, Any],
+        account_id: str,
     ) -> List[Dict[str, Any]]:
         """构造合并转发动作需要的节点列表。"""
         if not isinstance(raw_message, list):
@@ -274,7 +275,7 @@ class QQOutboundCodec:
 
             if item.get("type") == "forward":
                 if regular_segments:
-                    forward_segments.append(self._build_regular_forward_node(regular_segments, additional_config))
+                    forward_segments.append(self._build_regular_forward_node(regular_segments, account_id))
                     regular_segments = []
                 forward_segments.extend(self._segment_encoder.convert_segments([item]))
                 continue
@@ -282,22 +283,21 @@ class QQOutboundCodec:
             regular_segments.append(item)
 
         if regular_segments:
-            forward_segments.append(self._build_regular_forward_node(regular_segments, additional_config))
+            forward_segments.append(self._build_regular_forward_node(regular_segments, account_id))
 
         return forward_segments
 
     def _build_regular_forward_node(
         self,
         regular_segments: List[Mapping[str, Any]],
-        additional_config: Mapping[str, Any],
+        account_id: str,
     ) -> Dict[str, Any]:
         """将合并转发消息中夹带的普通消息段包装成一个转发节点。"""
-        self_id = str(additional_config.get("self_id") or "").strip()
         return {
             "type": "node",
             "data": {
                 "name": "MaiBot",
-                "uin": self_id,
+                "uin": account_id,
                 "content": self._segment_encoder.convert_segments(regular_segments),
             },
         }

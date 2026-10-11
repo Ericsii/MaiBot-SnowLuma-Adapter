@@ -46,6 +46,16 @@ class QQRuntimeStateManager:
         self._reported_account_id: Optional[str] = None
         self._reported_scope: Optional[str] = None
 
+    @property
+    def account_id(self) -> Optional[str]:
+        """返回当前已就绪连接的账号，供适配器合成消息声明归属。"""
+        return self._reported_account_id if self._runtime_state_connected else None
+
+    @property
+    def scope(self) -> Optional[str]:
+        """返回当前已就绪连接的作用域。"""
+        return self._reported_scope if self._runtime_state_connected else None
+
     async def report_connected(self, account_id: str, server_config: QQServerConfig) -> bool:
         """向 Host 上报当前消息网关连接已就绪。
 

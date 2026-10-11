@@ -105,8 +105,7 @@ class QQEventRouter:
         settings = self._load_settings()
 
         self_id = str(payload.get("self_id") or "").strip()
-        if self_id:
-            await runtime.runtime_state.report_connected(self_id, settings.client)
+        # 普通消息只声明自身归属；连接身份由初始化/生命周期上报，不由消息改写。
 
         sender = payload.get("sender", {})
         if not isinstance(sender, Mapping):
@@ -143,12 +142,12 @@ class QQEventRouter:
         if not runtime.regex_filter.is_message_allowed(plain_text, settings.filters):
             return
 
-        route_metadata = self._build_route_metadata(self_id, settings.client.connection_id)
+        message_dict["account_id"] = self_id
+        message_dict["scope"] = settings.client.connection_id or None
         external_message_id = str(payload.get("message_id") or "").strip()
         accepted = await self._gateway_capability.route_message(
             gateway_name=self._gateway_name,
             message=message_dict,
-            route_metadata=route_metadata,
             external_message_id=external_message_id,
             dedupe_key=external_message_id,
         )
@@ -165,8 +164,6 @@ class QQEventRouter:
         settings = self._load_settings()
 
         self_id = str(payload.get("self_id") or "").strip()
-        if self_id:
-            await runtime.runtime_state.report_connected(self_id, settings.client)
 
         await runtime.ban_tracker.record_notice(payload)
         await self.route_notice_payload(payload, self_id, settings.client.connection_id)
@@ -199,13 +196,13 @@ class QQEventRouter:
         if message_dict is None:
             return
 
-        route_metadata = self._build_route_metadata(self_id, connection_id)
+        message_dict["account_id"] = self_id
+        message_dict["scope"] = connection_id or None
         external_message_id = str(payload.get("message_id") or "").strip()
         dedupe_key = runtime.notice_codec.build_notice_dedupe_key(payload) or ""
         accepted = await self._gateway_capability.route_message(
             gateway_name=self._gateway_name,
             message=message_dict,
-            route_metadata=route_metadata,
             external_message_id=external_message_id,
             dedupe_key=dedupe_key,
         )
@@ -218,9 +215,15 @@ class QQEventRouter:
         Args:
             payload: 合成后的 OneBot 通知载荷。
         """
-        settings = self._load_settings()
-        self_id = str(payload.get("self_id") or "").strip()
-        await self.route_notice_payload(payload, self_id, settings.client.connection_id)
+        runtime = self._require_runtime()
+        account_id = runtime.runtime_state.account_id
+        if not account_id:
+            raise RuntimeError("自然解除禁言通知缺少已就绪连接的账号归属")
+
+        # 定时器生成的通知没有对端 self_id；以当前连接身份构造通知，供解析和路由共同使用。
+        notice_payload = dict(payload)
+        notice_payload["self_id"] = account_id
+        await self.route_notice_payload(notice_payload, account_id, runtime.runtime_state.scope or "")
 
     async def handle_meta_event(self, payload: QQPayloadDict) -> None:
         """处理 对端 ``meta_event`` 事件。
@@ -335,24 +338,6 @@ class QQEventRouter:
         if runtime is None:
             raise RuntimeError("适配器运行时尚未初始化")
         return runtime
-
-    @staticmethod
-    def _build_route_metadata(self_id: str, connection_id: str) -> Dict[str, Any]:
-        """构造注入 Host 时使用的路由元数据。
-
-        Args:
-            self_id: 当前机器人账号 ID。
-            connection_id: 当前连接标识。
-
-        Returns:
-            Dict[str, Any]: 路由元数据字典。
-        """
-        route_metadata: Dict[str, Any] = {}
-        if self_id:
-            route_metadata["self_id"] = self_id
-        if connection_id:
-            route_metadata["connection_id"] = connection_id
-        return route_metadata
 
     @staticmethod
     def _extract_self_id_from_login_response(response: Optional[Dict[str, Any]]) -> str:

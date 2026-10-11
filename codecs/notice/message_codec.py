@@ -61,7 +61,6 @@ class QQNoticeCodec:
             return None
 
         additional_config: Dict[str, Any] = {
-            "self_id": self_id,
             "napcat_notice_type": notice_type,
             "napcat_notice_sub_type": str(payload.get("sub_type") or "").strip(),
             "napcat_notice_payload": dict(payload),
@@ -80,6 +79,8 @@ class QQNoticeCodec:
             timestamp_seconds = time.time()
 
         return {
+            "account_id": self_id,
+            "scope": None,
             "message_id": f"qq-notice-{uuid4().hex}",
             "timestamp": str(float(timestamp_seconds)),
             "platform": "qq",

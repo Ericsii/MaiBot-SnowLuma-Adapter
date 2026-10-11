@@ -87,7 +87,6 @@ class QQInboundCodec(QQInboundCardMixin, QQInboundTextMixin):
             timestamp_seconds = time.time()
 
         additional_config: Dict[str, Any] = {
-            "self_id": self_id,
             "napcat_message_type": message_type,
             "client_type": self._profile_state.profile.client_type,
         }
@@ -124,6 +123,8 @@ class QQInboundCodec(QQInboundCardMixin, QQInboundTextMixin):
             "message_id": message_id,
             "timestamp": str(float(timestamp_seconds)),
             "platform": "qq",
+            "account_id": self_id,
+            "scope": None,
             "message_info": message_info,
             "raw_message": raw_message,
             "is_mentioned": is_at,
