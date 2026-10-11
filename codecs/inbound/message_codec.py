@@ -262,7 +262,7 @@ class QQInboundCodec(QQInboundCardMixin, QQInboundTextMixin):
         converted_segments: QQSegments = []
         at_target_cache: Dict[str, Tuple[Optional[str], Optional[str]]] = {}
         is_at = False
-        for segment in message_payload:
+        for segment_index, segment in enumerate(message_payload):
             segment_type = str(segment.get("type") or "").strip()
             segment_data = segment.get("data", {})
             if not isinstance(segment_data, Mapping):
@@ -270,7 +270,23 @@ class QQInboundCodec(QQInboundCardMixin, QQInboundTextMixin):
 
             if segment_type == "text":
                 if text_value := str(segment_data.get("text") or ""):
+                    # SnowLuma 会在 Markdown 后附加相同正文的 text 兼容段，只消费一次正文。
+                    if segment_index > 0:
+                        previous_segment = message_payload[segment_index - 1]
+                        if (
+                            previous_segment["type"] == "markdown"
+                            and previous_segment["data"].get("content") == text_value
+                        ):
+                            continue
                     converted_segments.append(self._build_text_segment(text_value))
+                continue
+
+            if segment_type == "markdown":
+                markdown_content = segment_data.get("content")
+                if not isinstance(markdown_content, str):
+                    raise ValueError("Markdown 消息段的 content 必须是字符串")
+                if markdown_content:
+                    converted_segments.append(self._build_text_segment(markdown_content))
                 continue
 
             if segment_type == "at":
@@ -594,10 +610,7 @@ class QQInboundCodec(QQInboundCardMixin, QQInboundTextMixin):
         if image_action_fallback:
             file_identifier = str(segment_data.get("file") or segment_data.get("file_id") or "").strip()
             if file_identifier:
-                image_detail = await self._query_service.safe_call_action_data(
-                    "get_image",
-                    {"file": file_identifier},
-                )
+                image_detail = await self._query_service.get_image(file_identifier)
                 if isinstance(image_detail, Mapping):
                     for reference in (image_detail.get("file"), image_detail.get("url")):
                         binary_data = await self._load_binary_reference(str(reference or "").strip())

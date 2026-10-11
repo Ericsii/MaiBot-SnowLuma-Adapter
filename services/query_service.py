@@ -45,6 +45,18 @@ class QQQueryService:
         """
         return await self._action_service.call_action_data(action_name, params)
 
+    async def get_image(self, file_identifier: str) -> Optional[QQPayloadDict]:
+        """查询图片的本地路径或下载地址。
+
+        Args:
+            file_identifier: 入站图片消息中的文件标识。
+
+        Returns:
+            Optional[QQPayloadDict]: 图片信息字典；查询失败时返回 ``None``。
+        """
+        response_data = await self._safe_call_action_data("get_image", {"file": file_identifier})
+        return response_data if isinstance(response_data, dict) else None
+
     async def get_login_info(self) -> Optional[QQPayloadDict]:
         """获取当前登录账号信息。
 
