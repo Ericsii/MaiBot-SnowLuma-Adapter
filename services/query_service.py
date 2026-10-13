@@ -94,16 +94,19 @@ class QQQueryService:
         response_data = await self._safe_call_action_data("get_friend_list", {"no_cache": bool(no_cache)})
         return self._normalize_payload_list(response_data, action_name="get_friend_list")
 
-    async def get_group_info(self, group_id: str) -> Optional[QQPayloadDict]:
+    async def get_group_info(self, group_id: str, no_cache: bool = False) -> Optional[QQPayloadDict]:
         """获取群信息。
 
         Args:
             group_id: 群号。
+            no_cache: 是否强制刷新群信息。
 
         Returns:
             Optional[QQPayloadDict]: 群信息字典；失败时返回 ``None``。
         """
-        response_data = await self._safe_call_action_data("get_group_info", {"group_id": group_id})
+        response_data = await self._safe_call_action_data(
+            "get_group_info", {"group_id": group_id, "no_cache": bool(no_cache)}
+        )
         return response_data if isinstance(response_data, dict) else None
 
     async def get_group_detail_info(self, group_id: str) -> Optional[QQPayloadDict]:

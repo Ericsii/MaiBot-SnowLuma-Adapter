@@ -269,17 +269,17 @@ class QQPluginOptions(PluginConfigBase):
     )
     enable_text_at_conversion: bool = Field(
         default=False,
-        description="将群聊发送文本中的 @QQ号、@群名片或 @昵称转换为实际 @。",
+        description="将群聊发送文本中的 @QQ号、@群名片或 @昵称转换为实际 @。真实 @ 的相邻去重始终生效。",
         json_schema_extra={
             "label": "启用文本转@",
-            "hint": "仅转换能唯一匹配当前群成员的完整名称；未知或重名保留原文，重复 @ 和中间空白均保留。",
+            "hint": "仅转换能唯一匹配当前群成员的完整名称；未知或重名保留原文，相邻同目标 @ 合并。",
             "i18n": _schema_i18n(
                 label_en="Convert text mentions",
                 label_ja="テキストのメンションを変換",
                 hint_en="Resolve full QQ IDs, group cards or nicknames within the current group; "
-                "keep unknown or ambiguous names, repeated mentions and intervening whitespace.",
+                "keep unknown or ambiguous names and merge adjacent mentions of the same user.",
                 hint_ja="現在のグループ内で QQ 番号・グループ名・ニックネームを完全一致で検索します。"
-                "不明・同名はそのままにし、重複するメンションと間の空白を保持します。",
+                "不明・同名はそのままにし、隣接する同じユーザーへのメンションを統合します。",
             ),
             "order": 3,
         },

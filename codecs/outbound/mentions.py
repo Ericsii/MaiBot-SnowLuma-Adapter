@@ -1,4 +1,4 @@
-"""基于当前群成员身份转换文本 @。"""
+"""基于当前群成员身份转换文本 @，并合并相邻重复提及。"""
 
 from typing import Any, Dict, List, Mapping, Set
 
@@ -46,4 +46,23 @@ def convert_text_mentions(
             cursor = match.end()
         if cursor < len(value) or cursor == 0:
             result.append({"type": "text", "data": {"text": value[cursor:]}})
+    return result
+
+
+def merge_adjacent_mentions(segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """相同目标的相邻 @ 合并；仅空格或制表符不打断相邻关系，正文和换行会打断。"""
+    result: List[Dict[str, Any]] = []
+    last_target = ""
+    for segment in segments:
+        segment_type = segment.get("type")
+        if segment_type == "at":
+            target = str(segment["data"]["qq"])
+            if target and target == last_target:
+                while result and result[-1].get("type") == "text":
+                    result.pop()
+                continue
+            last_target = target
+        elif segment_type != "text" or segment["data"]["text"].strip(" \t"):
+            last_target = ""
+        result.append(segment)
     return result

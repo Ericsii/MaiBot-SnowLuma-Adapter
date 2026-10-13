@@ -92,12 +92,21 @@ class QQBanTracker:
         Args:
             record: 待刷新的禁言记录。
         """
-        group_info = await self._query_service.get_group_info(record.group_id)
+        # SnowLuma 默认读取群列表缓存；旧的未禁言状态不能用于判定禁言已解除。
+        group_info = await self._query_service.get_group_info(record.group_id, no_cache=True)
         if group_info is None:
-            await self._emit_natural_lift(record)
             return
 
-        group_all_shut = self._normalize_int(group_info.get("group_all_shut"), default=0)
+        # 查询失败、字段缺失或格式错误都不是解除证据，必须保留原禁言记录。
+        raw_group_all_shut = group_info.get("group_all_shut")
+        if not isinstance(raw_group_all_shut, (int, str)):
+            self._logger.warning(f"群 {record.group_id} 的群信息缺少有效 group_all_shut，无法确认全体禁言状态")
+            return
+        try:
+            group_all_shut = int(raw_group_all_shut)
+        except ValueError:
+            self._logger.warning(f"群 {record.group_id} 的 group_all_shut 格式非法: {raw_group_all_shut!r}")
+            return
         if group_all_shut == 0:
             await self._emit_natural_lift(record)
 

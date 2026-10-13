@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Tuple
 
 from ...profile import MSG_ACTION_STYLE_GENERIC
-from .mentions import build_member_aliases, convert_text_mentions
+from .mentions import build_member_aliases, convert_text_mentions, merge_adjacent_mentions
 from .segment_encoder import QQOutboundSegmentEncoder
 
 OutboundAction = Tuple[str, Dict[str, Any]]
@@ -67,7 +67,8 @@ class QQOutboundCodec:
                     members = await self._get_group_members(str(params["group_id"]))
                     aliases = build_member_aliases(members) if members is not None else {}
                 segments = convert_text_mentions(segments, aliases)
-            params["message"] = segments
+            # 真实 @ 的相邻去重独立于文本转换开关，避免宿主生成的重复 @ 直接透传。
+            params["message"] = merge_adjacent_mentions(segments)
         return actions
 
     def build_outbound_actions(
