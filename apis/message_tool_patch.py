@@ -18,6 +18,7 @@ def _tool_param(name: str, param_type: ToolParamType, description: str, required
 
 @Tool(
     "find_user_qq_id",
+    platforms="qq",
     description="根据指定消息的 msg_id 查询该条消息发送者的 QQ 号信息",
     parameters=[
         _tool_param("msg_id", ToolParamType.STRING, "要查询的消息 ID", True),

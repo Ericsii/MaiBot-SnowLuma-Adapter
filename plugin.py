@@ -123,6 +123,7 @@ class SnowLumaAdapterPlugin(
 
     @Tool(
         "open_private_chat",
+        platforms="qq",
         description=(
             "向指定 QQ 用户发送一条私聊消息，用于主动开启私聊。"
         ),
@@ -223,6 +224,7 @@ class SnowLumaAdapterPlugin(
 
     @Tool(
         "get_qq_by_msg_id",
+        platforms="qq",
         description="根据当前聊天中的消息 ID 获取该消息发送者的 QQ 用户 ID。",
         parameters=[
             ToolParameterInfo(
@@ -287,6 +289,7 @@ class SnowLumaAdapterPlugin(
 
     @Tool(
         "send_poke",
+        platforms="qq",
         description=(
             "对指定消息的发送者发送戳一戳。"
         ),
@@ -369,6 +372,7 @@ class SnowLumaAdapterPlugin(
 
     @Tool(
         "recall_message",
+        platforms="qq",
         description=(
             "撤回一条 QQ 消息。撤回自己发送的消息通常限 2 分钟内；"
             "撤回他人消息需要机器人是群管理员。message_id 使用聊天记录中的消息 ID。"
@@ -413,6 +417,7 @@ class SnowLumaAdapterPlugin(
 
     @Tool(
         "mute",
+        platforms="qq",
         description=(
             "在群聊中根据消息 ID 禁言该消息的发送者。"
             "适用于刷屏、违规发言、用户主动要求被禁言等情况。"
@@ -536,6 +541,7 @@ class SnowLumaAdapterPlugin(
 
     @Tool(
         "react_emoji",
+        platforms="qq",
         description=(
             "给一条消息贴表情表态（消息回应），如点赞、爱心等。"
             "常用表情 ID：76=赞、66=爱心、63=玫瑰、21=可爱、5=流泪、78=握手（戏谑的志同道合）、144=喝彩。424=续标识(表达刺激或极度同意）"
@@ -600,6 +606,7 @@ class SnowLumaAdapterPlugin(
 
     @Tool(
         "list_chat_streams",
+        platforms="qq",
         description=(
             "列出当前所有活跃的 QQ 聊天流（群聊和私聊），"
             "返回每个流的显示名称、类型、群号或用户 QQ 号。"
@@ -663,6 +670,7 @@ class SnowLumaAdapterPlugin(
 
     @Tool(
         "forward_messages",
+        platforms="qq",
         description=(
             "把一批消息打包成合并转发消息，发送到指定的群或私聊。"
             "目标群号或用户 QQ 号可先用 list_chat_streams 查询。"
