@@ -614,6 +614,7 @@ class SnowLumaAdapterPlugin(
         ),
         parameters=[],
         visibility="visible",
+        enabled=False,
     )
     async def tool_list_chat_streams(self, **kwargs: Any) -> Dict[str, Any]:
         """列出所有活跃聊天流。"""
@@ -1010,6 +1011,7 @@ class SnowLumaAdapterPlugin(
             ("recall_message", abilities.enable_recall_tool),
             ("mute", abilities.enable_mute_tool),
             ("react_emoji", abilities.enable_emoji_like_tool),
+            ("list_chat_streams", abilities.enable_forward_tool),
             ("forward_messages", abilities.enable_forward_tool),
         )
         try:
