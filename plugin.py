@@ -542,6 +542,7 @@ class SnowLumaAdapterPlugin(
     @Tool(
         "react_emoji",
         platforms="qq",
+        chat_scope="group",
         description=(
             "给一条消息贴表情表态（消息回应），如点赞、爱心等。"
             "常用表情 ID：76=赞、66=爱心、63=玫瑰、21=可爱、5=流泪、78=握手（戏谑的志同道合）、144=喝彩。424=续标识(表达刺激或极度同意）"
