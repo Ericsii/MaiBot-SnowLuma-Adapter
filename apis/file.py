@@ -12,6 +12,27 @@ from .support import QQApiParamsInput, QQApiSupportMixin
 class QQFileApiMixin(QQApiSupportMixin):
     """QQ 文件、媒体与流式相关 API。"""
 
+    @API("adapter.files.resolve", description="为主程序解析已登记附件的下载地址", version="1", public=False)
+    async def api_resolve_file(self, source: Dict[str, Any]) -> Dict[str, Any]:
+        """控制面仅返回短期定位信息，字节由主程序独立下载。"""
+        if source.get("platform") != "qq" or not source.get("file_id"):
+            raise ValueError("文件来源无效")
+        params: Dict[str, Any] = {"file_id": str(source["file_id"])}
+        if source.get("group_id"):
+            params["group_id"] = self._normalize_positive_int(source["group_id"], "group_id")
+            busid = int(source.get("busid", 0))
+            # 入站文件未携带 busid 时登记为 0；不要覆盖对端的默认业务类型。
+            if busid != 0:
+                params["busid"] = self._normalize_positive_int(busid, "busid")
+            action = "get_group_file_url"
+        else:
+            params["user_id"] = self._normalize_positive_int(source["user_id"], "user_id")
+            action = "get_private_file_url"
+        result = await self._call_napcat_action_data(action, params)
+        if not isinstance(result, dict) or not result.get("url"):
+            raise RuntimeError("平台未提供文件下载 URL")
+        return {"url": str(result["url"])}
+
     @API("adapter.napcat.file.get_record", description="获取语音文件详情", version="1", public=True)
     async def api_get_record(
         self,

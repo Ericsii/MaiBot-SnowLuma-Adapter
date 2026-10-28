@@ -259,6 +259,7 @@ class QQEventRouter:
         settings = self._load_settings()
 
         # 连接建立后先探测对端客户端类型：auto 模式判定画像，显式声明做一致性校验。
+        runtime.runtime_state.detected_protocol = None
         try:
             detected_type, app_name, app_version = await probe_client_profile(
                 runtime.action_service.call_action_data,
@@ -268,6 +269,7 @@ class QQEventRouter:
             self._logger.error(f"客户端类型探测失败，消息网关保持未就绪: {exc}")
             return
 
+        runtime.runtime_state.detected_protocol = detected_type
         declared_type = settings.client.client_type
         if declared_type != "auto" and declared_type != detected_type:
             # 按配置声明继续运行，不静默改判；提醒用户配置与对端不一致。
@@ -307,6 +309,7 @@ class QQEventRouter:
     async def handle_transport_disconnected(self) -> None:
         """处理传输层断开事件。"""
         runtime = self._require_runtime()
+        runtime.runtime_state.detected_protocol = None
         await runtime.heartbeat_monitor.stop()
         await runtime.ban_tracker.stop()
         self.reset_caches()

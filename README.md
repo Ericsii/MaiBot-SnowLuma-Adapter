@@ -1,5 +1,7 @@
 # MaiBot SnowLuma Adapter（统一 QQ 连接器）
 
+需要 MaiBot >= 1.3.18。
+
 连接 SnowLuma / NapCat 的 MaiBot 适配器插件。
 
 1.0 版起，本插件同时支持两类客户端：连接建立后自动判断连接方为 NapCat 还是 Snowluma
@@ -79,3 +81,12 @@ token 鉴权不区分画像：连接时同时附带 `Authorization: Bearer` 头�
 `access_token` 参数（OneBot v11 两种标准方式），两类服务端各取所需。
 
 ```
+
+
+## 配置页运行时控件
+
+需要支持运行时控件的新版主程序及 SDK >= 2.19.0。
+
+配置页新增 QQ 连接器状态及“重新连接”按钮。登录仍由 SnowLuma / NapCat 客户端完成：OneBot 接口没有统一扫码登录协议，因此此处不显示二维码。
+
+本地开发可设置 `MAIBOT_PLUGIN_SDK_PATH` 指向新版 SDK 仓库，然后重启主程序。

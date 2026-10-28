@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 import time
@@ -78,6 +78,15 @@ class QQNoticeCodec:
         if not isinstance(timestamp_seconds, (int, float)):
             timestamp_seconds = time.time()
 
+        segments: List[Dict[str, Any]] = [{"type": "text", "data": notice_text}]
+        if notice_type in ("group_upload", "offline_file") and isinstance(payload.get("file"), dict):
+            file = payload["file"]
+            segments.append({"type": "file", "data": {
+                "name": str(file.get("name") or "附件"), "size": file.get("size") or 0,
+                "file_id": str(file.get("id") or file.get("file_id") or ""),
+                "busid": int(file.get("busid") or 0),
+            }})
+
         return {
             "account_id": self_id,
             "scope": None,
@@ -85,7 +94,7 @@ class QQNoticeCodec:
             "timestamp": str(float(timestamp_seconds)),
             "platform": "qq",
             "message_info": message_info,
-            "raw_message": [{"type": "text", "data": notice_text}],
+            "raw_message": segments,
             "is_mentioned": False,
             "is_at": False,
             "is_emoji": False,

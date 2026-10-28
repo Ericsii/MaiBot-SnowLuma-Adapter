@@ -45,6 +45,8 @@ class QQRuntimeStateManager:
         self._runtime_state_connected: bool = False
         self._reported_account_id: Optional[str] = None
         self._reported_scope: Optional[str] = None
+        self.detected_protocol: Optional[str] = None
+        self._reported_protocol: Optional[str] = None
 
     @property
     def account_id(self) -> Optional[str]:
@@ -71,11 +73,16 @@ class QQRuntimeStateManager:
         if not normalized_account_id:
             return False
 
+        # 连接探测完成前不发布就绪状态，避免将配置画像当作实际客户端类型。
+        if self.detected_protocol is None:
+            return False
+
         scope = server_config.connection_id or None
         if (
             self._runtime_state_connected
             and self._reported_account_id == normalized_account_id
             and self._reported_scope == scope
+            and self._reported_protocol == self.detected_protocol
         ):
             return True
 
@@ -87,7 +94,10 @@ class QQRuntimeStateManager:
                 platform="qq",
                 account_id=normalized_account_id,
                 scope=server_config.connection_id,
-                metadata={"ws_url": server_config.build_ws_url()},
+                metadata={
+                    "ws_url": server_config.build_ws_url(),
+                    "protocol": self.detected_protocol,
+                },
             )
         except Exception as exc:
             self._logger.warning(f"消息网关上报连接就绪状态失败: {exc}")
@@ -100,6 +110,7 @@ class QQRuntimeStateManager:
         self._runtime_state_connected = True
         self._reported_account_id = normalized_account_id
         self._reported_scope = scope
+        self._reported_protocol = self.detected_protocol
         self._logger.info(
             f"消息网关已激活路由: platform=qq account_id={normalized_account_id} "
             f"scope={self._reported_scope or '*'}"

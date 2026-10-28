@@ -13,7 +13,9 @@ from __future__ import annotations
 
 from typing import Any, ClassVar, Dict, List, Mapping, Optional, cast
 
-from maibot_sdk import MaiBotPlugin, MessageGateway, PluginConfigBase, Tool
+import asyncio
+
+from maibot_sdk import ConfigWidget, ConfigWidgetState, MaiBotPlugin, MessageGateway, PluginConfigBase, Tool
 from maibot_sdk.types import ToolParameterInfo, ToolParamType
 
 from .apis import (
@@ -69,6 +71,26 @@ class SnowLumaAdapterPlugin(
 
     config_model: ClassVar[type[PluginConfigBase] | None] = QQPluginSettings
 
+    config_widgets: ClassVar[List[ConfigWidget]] = [
+        ConfigWidget(id="connection", kind="status", label="QQ 连接器状态"),
+        ConfigWidget(id="reconnect", kind="action", label="重新连接"),
+    ]
+
+    async def get_config_widget_state(self) -> Dict[str, ConfigWidgetState]:
+        bundle = self._runtime_bundle
+        account_id = bundle.runtime_state.account_id if bundle is not None else None
+        text = (f"已连接：QQ {account_id}" if account_id
+                else "未连接，请检查连接配置，并在 SnowLuma / NapCat 客户端完成登录")
+        return {
+            "connection": ConfigWidgetState(text=text, tone="success" if account_id else "neutral"),
+            "reconnect": ConfigWidgetState(disabled=not self._load_settings().should_connect()),
+        }
+
+    async def on_config_widget_action(self, action_id: str) -> None:
+        if action_id != "reconnect":
+            raise ValueError(f"未知配置页操作: {action_id}")
+        await self._restart_connection_if_needed()
+
     def __init__(self) -> None:
         """初始化适配器插件实例。"""
         super().__init__()
@@ -77,6 +99,7 @@ class SnowLumaAdapterPlugin(
         self._event_router: Optional[QQEventRouter] = None
         self._runtime_bundle: Optional[QQRuntimeBundle] = None
         self._debug_logger: Optional[AdaDebugLogger] = None
+        self._connection_lock = asyncio.Lock()
 
     def get_components(self) -> List[Dict[str, Any]]:
         """收集组件，并为 NapCat API 注册同名 SnowLuma 别名。"""
@@ -102,7 +125,8 @@ class SnowLumaAdapterPlugin(
 
     async def on_unload(self) -> None:
         """在插件卸载时关闭连接。"""
-        await self._stop_connection()
+        async with self._connection_lock:
+            await self._stop_connection()
 
     async def on_config_update(self, scope: str, config_data: Dict[str, Any], version: str) -> None:
         """在配置更新后热重载连接（含 client_type 热切换）。
@@ -854,7 +878,6 @@ class SnowLumaAdapterPlugin(
         name=SNOWLUMA_GATEWAY_NAME,
         route_type="duplex",
         platform="qq",
-        protocol="snowluma",
         description="SnowLuma / NapCat 正向 WebSocket 双工消息网关",
     )
     async def handle_snowluma_gateway(
@@ -1048,31 +1071,32 @@ class SnowLumaAdapterPlugin(
 
     async def _restart_connection_if_needed(self) -> None:
         """根据当前配置重启连接循环（client_type 热切换的入口）。"""
-        self._ensure_runtime_components()
-        runtime_bundle = self._require_runtime_bundle()
-        settings = self._load_settings()
+        async with self._connection_lock:
+            self._ensure_runtime_components()
+            runtime_bundle = self._require_runtime_bundle()
+            settings = self._load_settings()
 
-        await self._stop_connection()
-        if not settings.should_connect():
-            self.ctx.logger.info("适配器保持空闲状态，因为插件或配置未启用")
-            return
-        if not settings.validate_runtime_config(self.ctx.logger):
-            return
-        if not runtime_bundle.transport.is_available():
-            self.ctx.logger.error("适配器依赖 aiohttp，但当前环境未安装该依赖")
-            return
+            await self._stop_connection()
+            if not settings.should_connect():
+                self.ctx.logger.info("适配器保持空闲状态，因为插件或配置未启用")
+                return
+            if not settings.validate_runtime_config(self.ctx.logger):
+                return
+            if not runtime_bundle.transport.is_available():
+                self.ctx.logger.error("适配器依赖 aiohttp，但当前环境未安装该依赖")
+                return
 
-        runtime_bundle.regex_filter.reload_patterns(settings.filters.regex_filter_patterns)
-        if settings.filters.regex_filter_enabled and settings.filters.regex_filter_patterns:
-            self.ctx.logger.info(
-                f"正则消息过滤已启用: 模式={settings.filters.regex_filter_mode}，"
-                f"规则数={len(settings.filters.regex_filter_patterns)}"
-            )
-        if not settings.notice.enabled:
-            self.ctx.logger.info("通知事件转发已整体关闭：所有通知都不会传入 Host")
+            runtime_bundle.regex_filter.reload_patterns(settings.filters.regex_filter_patterns)
+            if settings.filters.regex_filter_enabled and settings.filters.regex_filter_patterns:
+                self.ctx.logger.info(
+                    f"正则消息过滤已启用: 模式={settings.filters.regex_filter_mode}，"
+                    f"规则数={len(settings.filters.regex_filter_patterns)}"
+                )
+            if not settings.notice.enabled:
+                self.ctx.logger.info("通知事件转发已整体关闭：所有通知都不会传入 Host")
 
-        runtime_bundle.transport.configure(settings.client, runtime_bundle.profile_state)
-        await runtime_bundle.transport.start()
+            runtime_bundle.transport.configure(settings.client, runtime_bundle.profile_state)
+            await runtime_bundle.transport.start()
 
     async def _stop_connection(self) -> None:
         """停止当前连接并清理运行时缓存。"""

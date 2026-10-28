@@ -338,7 +338,12 @@ class QQInboundCodec(QQInboundCardMixin, QQInboundTextMixin):
                 continue
 
             if segment_type == "file":
-                converted_segments.append(self._build_file_text_segment(segment_data))
+                converted_segments.append({"type": "file", "data": {
+                    "name": str(segment_data.get("name") or segment_data.get("file_name") or "附件"),
+                    "size": segment_data.get("size") or segment_data.get("file_size") or 0,
+                    "file_id": str(segment_data.get("file_id") or segment_data.get("id") or ""),
+                    "busid": int(segment_data.get("busid") or 0),
+                }})
                 continue
 
             if segment_type == "json":

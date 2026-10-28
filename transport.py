@@ -1,12 +1,15 @@
 """OneBot 正向 WebSocket 传输层（SnowLuma / SnowLuma / NapCat 通用）。"""
 
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, Dict, Optional, Set, cast
-from urllib.parse import urlencode
+from urllib.parse import quote, quote_plus, urlencode
 from uuid import uuid4
 
 import asyncio
 import contextlib
+import errno
 import json
+import re
+import socket
 
 from .config import QQServerConfig
 from .profile import ProfileState
@@ -15,7 +18,14 @@ if TYPE_CHECKING:
     from aiohttp import ClientWebSocketResponse as AiohttpClientWebSocketResponse
 
 try:
-    from aiohttp import ClientSession, ClientTimeout, WSMsgType
+    from aiohttp import (
+        ClientConnectorError,
+        ClientSession,
+        ClientSSLError,
+        ClientTimeout,
+        WSMsgType,
+        WSServerHandshakeError,
+    )
 
     AIOHTTP_AVAILABLE = True
 except ImportError:
@@ -205,8 +215,8 @@ class QQTransportClient:
                 raise
             except Exception as exc:
                 self._logger.warning(
-                    f"SnowLuma 适配器连接失败: {exc}"
-                    f"{self._build_missing_token_hint(server_config)}"
+                    f"SnowLuma 适配器连接失败:{display_url}；"
+                    f"{self._describe_connection_error(exc, server_config)}"
                     f"{self._build_reconnect_hint(server_config)}"
                 )
             finally:
@@ -404,10 +414,60 @@ class QQTransportClient:
             reason: 当前连接结束原因。
         """
         self._logger.warning(
-            f"SnowLuma 适配器连接已断开: {ws_url}，{reason}"
+            f"SnowLuma 适配器连接已断开: {ws_url}，{self._redact_connection_error(reason, server_config)}"
             f"{self._build_missing_token_hint(server_config)}"
             f"{self._build_reconnect_hint(server_config)}"
         )
+
+    def _redact_connection_error(self, message: str, server_config: QQServerConfig) -> str:
+        """移除异常文本中的访问令牌，包括 aiohttp 握手异常携带的完整 URL。"""
+        if server_config.token:
+            # 异常可能携带原值或 URL 编码后的值，不能只脱敏主动打印的连接地址。
+            for token in sorted(
+                {server_config.token, quote(server_config.token, safe=""), quote_plus(server_config.token)},
+                key=len,
+                reverse=True,
+            ):
+                message = message.replace(token, "***")
+        return re.sub(r"(?i)(access_token=)[^&\s'\"<>]+", r"\1***", message)
+
+    def _describe_connection_error(self, exc: Exception, server_config: QQServerConfig) -> str:
+        """根据实际异常区分连接、握手和鉴权问题，仅显示原因与操作提示。"""
+        if isinstance(exc, WSServerHandshakeError):
+            if exc.status == 401:
+                auth_state = "client.token 已配置但未通过校验" if server_config.token else "当前未配置 client.token"
+                reason = (
+                    f"鉴权失败（HTTP 401）：{auth_state}；"
+                    "请将 client.token 与当前账号的 OneBot 正向 WebSocket accessToken 核对一致"
+                )
+            elif exc.status == 403:
+                reason = "访问被拒绝（HTTP 403）：请检查服务端的访问权限、IP 白名单及 Token 策略"
+            elif exc.status == 404:
+                reason = "接口不存在（HTTP 404）：请检查连接地址和路径是否指向 OneBot 正向 WebSocket 接口"
+            else:
+                reason = (
+                    f"WebSocket 握手失败（HTTP {exc.status}）："
+                    "请确认 OneBot 正向 WebSocket 端口，并检查服务端或反向代理配置"
+                )
+        elif isinstance(exc, ClientSSLError):
+            reason = "TLS 握手或证书校验失败：请检查 ws/wss 协议、服务端证书及系统时间"
+        elif isinstance(exc, TimeoutError):
+            reason = "连接或通信超时：请检查目标地址、网络连通性、防火墙及服务端是否响应"
+        elif isinstance(exc, ClientConnectorError):
+            os_error = exc.os_error
+            if isinstance(os_error, socket.gaierror):
+                reason = "服务器域名解析失败：请检查 client.server 的域名拼写及 DNS 配置"
+            elif isinstance(os_error, ConnectionRefusedError) or os_error.errno in (errno.ECONNREFUSED, 10061):
+                return (
+                    "目标端口拒绝连接：请确认 SnowLuma/NapCat 已启动并启用 OneBot 正向 WebSocket 服务，"
+                    "且 client.server、client.port 与 地址 和 端口 一致"
+                )
+            else:
+                reason = "无法建立网络连接：请检查目标地址、网络路由及防火墙"
+        else:
+            reason = "连接或通信发生异常：请检查服务端运行状态及日志"
+
+        return reason
 
     def _build_missing_token_hint(self, server_config: QQServerConfig) -> str:
         """构造缺失 token 时的附加提示。
