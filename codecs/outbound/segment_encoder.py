@@ -15,10 +15,9 @@ QQ_FACE_IDS_BY_NAME: Dict[str, str] = {}
 for _face_id, _face_name in QQ_FACE_DESCRIPTIONS.items():
     if _face_id.isdecimal():
         QQ_FACE_IDS_BY_NAME.setdefault(_face_name, _face_id)
+QQ_FACE_NAME_PATTERN = "|".join(re.escape(name) for name in sorted(QQ_FACE_IDS_BY_NAME, key=len, reverse=True))
 QQ_TEXT_FACE_PATTERN = re.compile(
-    r"(?<![A-Za-z0-9_/:])/("
-    + "|".join(re.escape(name) for name in sorted(QQ_FACE_IDS_BY_NAME, key=len, reverse=True))
-    + r")(?!\w)"
+    rf"\[(?P<bracket>{QQ_FACE_NAME_PATTERN})\]|(?<![A-Za-z0-9_/:])/(?P<slash>{QQ_FACE_NAME_PATTERN})(?!\w)"
 )
 
 
@@ -124,13 +123,14 @@ class QQOutboundSegmentEncoder:
         if self._enable_text_face_conversion is None or not self._enable_text_face_conversion():
             return [{"type": "text", "data": {"text": text_value}}]
 
-        # 仅拆分完整匹配的 /表情名，保留空格、标点及未知名称的原始文本。
+        # 仅拆分完整匹配的 [表情名] 或 /表情名，保留空格、标点及未知名称的原始文本。
         segments: List[Dict[str, Any]] = []
         cursor = 0
         for match in QQ_TEXT_FACE_PATTERN.finditer(text_value):
             if match.start() > cursor:
                 segments.append({"type": "text", "data": {"text": text_value[cursor:match.start()]}})
-            segments.append({"type": "face", "data": {"id": QQ_FACE_IDS_BY_NAME[match.group(1)]}})
+            face_name = match.group("bracket") or match.group("slash")
+            segments.append({"type": "face", "data": {"id": QQ_FACE_IDS_BY_NAME[face_name]}})
             cursor = match.end()
         if cursor < len(text_value) or not segments:
             segments.append({"type": "text", "data": {"text": text_value[cursor:]}})
